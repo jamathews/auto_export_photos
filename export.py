@@ -13,7 +13,6 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(leve
                     handlers=[logging.StreamHandler()])
 logger = logging.getLogger(__name__)
 
-DEFAULT_THRESHOLD_DATE = "2025-10-09 00:00:00"
 DEFAULT_EXPORT_BASE_DIR = "./Pictures"
 
 
@@ -178,7 +177,7 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
 
     if os.path.exists(live_path):
         logger.debug(f"Skipping export of live photo {live_filename} - file already exists")
-        return (0, 1)  # (exported, skipped)
+        return 0, 1  # (exported, skipped)
     else:
         try:
             if item.live_photo:
