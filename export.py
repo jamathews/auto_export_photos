@@ -89,60 +89,69 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
 
     if os.path.exists(original_path):
         logger.debug(f"Skipping export of original {media_type} {original_filename} - file already exists")
-        return (0, 1)  # (exported, skipped)
+        return 0, 1  # (exported, skipped)
     else:
         if is_video:
             item.export(filename=original_filename, dest=export_path, use_photos_export=True)
+        elif item.has_raw or item.israw:
+            logger.debug(f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
+            return 0, 1  # (exported, skipped)
         else:
+            # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+            # because we need different filenames for each variation, and item.export() only accepts a single filename.
             item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
-        return (1, 0)  # (exported, skipped)
+        return 1, 0  # (exported, skipped)
 
 def export_edited(item, export_path, filename_base, filename_ext, media_type):
     """Export the edited version of a media item if edits exist."""
     if not item.hasadjustments:
-        return (0, 0)  # (exported, skipped) - No export attempted
+        return 0, 0  # (exported, skipped) - No export attempted
 
     edited_filename = f"{filename_base}_edited{filename_ext}"
     edited_path = os.path.join(export_path, edited_filename)
 
     if os.path.exists(edited_path):
         logger.debug(f"Skipping export of edited {media_type} {edited_filename} - file already exists")
-        return (0, 1)  # (exported, skipped)
+        return 0, 1  # (exported, skipped)
     else:
-        item.export(filename=edited_filename, dest=export_path, use_photos_export=False, edited=True, live_photo=False, raw_photo=False)
-        return (1, 0)  # (exported, skipped)
+        # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+        # because we need different filenames for each variation, and item.export() only accepts a single filename.
+        item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True, live_photo=False, raw_photo=False)
+        return 1, 0  # (exported, skipped)
 
 def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
     """Export the raw version of a photo if it has a raw version."""
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of raw version for video {item.filename} - not applicable for videos")
-        return (0, 0)  # (exported, skipped) - No export attempted
+        return 0, 0  # (exported, skipped) - No export attempted
 
     if not (item.has_raw or item.israw):
         logger.debug(f"Skipping export of raw photo for {item.filename} - no raw version available")
-        return (0, 0)  # (exported, skipped) - No export attempted
+        return 0, 0  # (exported, skipped) - No export attempted
 
     raw_filename = f"{filename_base}_raw{filename_ext}"
     raw_path = os.path.join(export_path, raw_filename)
 
     if os.path.exists(raw_path):
         logger.debug(f"Skipping export of raw photo {raw_filename} - file already exists")
-        return (0, 1)  # (exported, skipped)
+        return 0, 1  # (exported, skipped)
     else:
         try:
-            item.export(filename=raw_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=True)
-            return (1, 0)  # (exported, skipped)
+            # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+            # because we need different filenames for each variation, and item.export() only accepts a single filename.
+            item.export(filename=raw_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=False, raw_photo=True)
+            return 1, 0  # (exported, skipped)
         except Exception as e:
             logger.debug(f"Could not export raw photo for {item.filename}: {e}")
-            return (0, 0)  # (exported, skipped) - Export failed
+            return 0, 0  # (exported, skipped) - Export failed
 
 def export_live(item, export_path, filename_base, filename_ext, is_photo, is_video):
     """Export the live version of a photo."""
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of live version for video {item.filename} - not applicable for videos")
-        return (0, 0)  # (exported, skipped) - No export attempted
+        return 0, 0  # (exported, skipped) - No export attempted
 
     live_filename = f"{filename_base}_live{filename_ext}"
     live_path = os.path.join(export_path, live_filename)
@@ -152,14 +161,24 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
         return (0, 1)  # (exported, skipped)
     else:
         try:
-            item.export(filename=live_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=True, raw_photo=False)
-            return (1, 0)  # (exported, skipped)
+            if item.live_photo:
+                # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+                # because we need different filenames for each variation, and item.export() only accepts a single filename.
+                item.export(filename=live_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=True, raw_photo=False)
+                return 1, 0  # (exported, skipped)
+            return 0, 0  # (exported, skipped) - Live photo not available for this photo
         except Exception as e:
             logger.debug(f"Could not export live photo for {item.filename}: {e}")
-            return (0, 0)  # (exported, skipped) - Export failed
+            return 0, 0  # (exported, skipped) - Export failed
 
 def export_media(threshold_date, export_base_dir):
     """Export photos and videos from Photos.app that were taken since the threshold date."""
+    # Note: In response to the question "can all variations be exported using a single call to item.export()?":
+    # It's not possible to export all variations (original, edited, raw, live) with a single call to item.export().
+    # The method only accepts a single filename parameter, and we need different filenames for each variation.
+    # Additionally, the parameters edited, live_photo, and raw_photo control which version to export,
+    # and they can't all be set to True at the same time to export all variations.
+    # Therefore, we need separate calls to item.export() for each variation.
     logger.info(f"Exporting photos and videos taken since {threshold_date}")
 
     # Initialize osxphotos PhotosDB
@@ -217,7 +236,7 @@ def export_media(threshold_date, export_base_dir):
                 logger.info(f"Processed {processed_count}/{len(filtered_media)} media items, exported {exported_count} files")
 
         except Exception as e:
-            logger.error(f"Error exporting {media_type} {item.filename}: {e}")
+            logger.error(f"Error exporting {item.filename}: {e}")
 
     logger.info(f"Successfully exported {exported_count} files from {processed_count} media items, skipped {skipped_count} already existing files")
 
