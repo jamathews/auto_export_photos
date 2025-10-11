@@ -96,21 +96,30 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
         logger.debug(f"Skipping export of original {media_type} {original_filename} - file already exists")
         return 0, 1  # (exported, skipped)
     else:
-        if is_video:
-            exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=True)
-            if not exported_files:
-                raise RuntimeError(f"Failed to export original video {original_filename}")
-        elif item.has_raw or item.israw:
-            logger.debug(f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
-            return 0, 1  # (exported, skipped)
-        else:
-            # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
-            # because we need different filenames for each variation, and item.export() only accepts a single filename.
-            exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=False,
-                                         edited=False, live_photo=False, raw_photo=False)
-            if not exported_files:
-                raise RuntimeError(f"Failed to export original photo {original_filename}")
-        return 1, 0  # (exported, skipped)
+        try:
+            if is_video:
+                exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=True)
+                if not exported_files:
+                    error_msg = f"Failed to export original video {original_filename}"
+                    log_export_error(os.path.dirname(export_path), item, original_filename, error_msg)
+                    raise RuntimeError(error_msg)
+            elif item.has_raw or item.israw:
+                logger.debug(f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
+                return 0, 1  # (exported, skipped)
+            else:
+                # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+                # because we need different filenames for each variation, and item.export() only accepts a single filename.
+                exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=False,
+                                            edited=False, live_photo=False, raw_photo=False)
+                if not exported_files:
+                    error_msg = f"Failed to export original photo {original_filename}"
+                    log_export_error(os.path.dirname(export_path), item, original_filename, error_msg)
+                    raise RuntimeError(error_msg)
+            return 1, 0  # (exported, skipped)
+        except Exception as e:
+            if not isinstance(e, RuntimeError):  # Only log if not already logged
+                log_export_error(os.path.dirname(export_path), item, original_filename, str(e))
+            raise
 
 
 def export_edited(item, export_path, filename_base, filename_ext, media_type):
@@ -125,13 +134,20 @@ def export_edited(item, export_path, filename_base, filename_ext, media_type):
         logger.debug(f"Skipping export of edited {media_type} {edited_filename} - file already exists")
         return 0, 1  # (exported, skipped)
     else:
-        # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
-        # because we need different filenames for each variation, and item.export() only accepts a single filename.
-        exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True,
-                                     live_photo=False, raw_photo=False)
-        if not exported_files:
-            raise RuntimeError(f"Failed to export edited {media_type} {edited_filename}")
-        return 1, 0  # (exported, skipped)
+        try:
+            # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
+            # because we need different filenames for each variation, and item.export() only accepts a single filename.
+            exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True,
+                                        live_photo=False, raw_photo=False)
+            if not exported_files:
+                error_msg = f"Failed to export edited {media_type} {edited_filename}"
+                log_export_error(os.path.dirname(export_path), item, edited_filename, error_msg)
+                raise RuntimeError(error_msg)
+            return 1, 0  # (exported, skipped)
+        except Exception as e:
+            if not isinstance(e, RuntimeError):  # Only log if not already logged
+                log_export_error(os.path.dirname(export_path), item, edited_filename, str(e))
+            raise
 
 
 def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
@@ -158,10 +174,13 @@ def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_vide
             exported_files = item.export(filename=raw_filename, dest=export_path, use_photos_export=True, edited=False,
                                          live_photo=False, raw_photo=True)
             if not exported_files:
-                raise RuntimeError(f"Failed to export raw photo {raw_filename}")
+                error_msg = f"Failed to export raw photo {raw_filename}"
+                log_export_error(os.path.dirname(export_path), item, raw_filename, error_msg)
+                raise RuntimeError(error_msg)
             return 1, 0  # (exported, skipped)
         except Exception as e:
             logger.debug(f"Could not export raw photo for {item.filename}: {e}")
+            log_export_error(os.path.dirname(export_path), item, raw_filename, str(e))
             return 0, 0  # (exported, skipped) - Export failed
 
 
@@ -186,11 +205,14 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
                 exported_files = item.export(filename=live_filename, dest=export_path, use_photos_export=True,
                                              edited=False, live_photo=True, raw_photo=False)
                 if not exported_files:
-                    raise RuntimeError(f"Failed to export live photo {live_filename}")
+                    error_msg = f"Failed to export live photo {live_filename}"
+                    log_export_error(os.path.dirname(export_path), item, live_filename, error_msg)
+                    raise RuntimeError(error_msg)
                 return 1, 0  # (exported, skipped)
             return 0, 0  # (exported, skipped) - Live photo not available for this photo
         except Exception as e:
             logger.debug(f"Could not export live photo for {item.filename}: {e}")
+            log_export_error(os.path.dirname(export_path), item, live_filename, str(e))
             return 0, 0  # (exported, skipped) - Export failed
 
 
@@ -263,6 +285,7 @@ def export_media(threshold_date, export_base_dir):
 
         except Exception as e:
             logger.error(f"Error exporting {item.filename}: {e}")
+            log_export_error(export_base_dir, item, item.filename, str(e))
 
     logger.info(
         f"Successfully exported {exported_count} files from {processed_count} media items, skipped {skipped_count} already existing files")
@@ -309,6 +332,25 @@ def save_export_timestamp(timestamp_file, current_timestamp):
         logger.debug(f"Saved export timestamp to {timestamp_file}")
     except Exception as e:
         logger.error(f"Failed to save export timestamp to {timestamp_file}: {e}")
+
+
+def log_export_error(export_dir, item, filename, error_message):
+    """
+    Log export errors to export_dir/last_export_errors.log.
+    Includes filename, original_filename, and date of the failed item.
+    """
+    error_log_file = os.path.join(export_dir, "last_export_errors.log")
+
+    try:
+        with open(error_log_file, "a") as f:
+            f.write(f"Filename: {filename}\n")
+            f.write(f"Original filename: {item.original_filename}\n")
+            f.write(f"Date: {item.date}\n")
+            f.write(f"Error: {error_message}\n")
+            f.write("-" * 50 + "\n")
+        logger.debug(f"Logged export error to {error_log_file}")
+    except Exception as e:
+        logger.error(f"Failed to log export error to {error_log_file}: {e}")
 
 
 def main():
