@@ -89,74 +89,74 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
 
     if os.path.exists(original_path):
         logger.debug(f"Skipping export of original {media_type} {original_filename} - file already exists")
-        return 1  # Skipped
+        return (0, 1)  # (exported, skipped)
     else:
         if is_video:
             item.export(filename=original_filename, dest=export_path, use_photos_export=True)
         else:
             item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
-        return 0  # Not skipped
+        return (1, 0)  # (exported, skipped)
 
 def export_edited(item, export_path, filename_base, filename_ext, media_type):
     """Export the edited version of a media item if edits exist."""
     if not item.hasadjustments:
-        return 0  # Not skipped
+        return (0, 0)  # (exported, skipped) - No export attempted
 
     edited_filename = f"{filename_base}_edited{filename_ext}"
     edited_path = os.path.join(export_path, edited_filename)
 
     if os.path.exists(edited_path):
         logger.debug(f"Skipping export of edited {media_type} {edited_filename} - file already exists")
-        return 1  # Skipped
+        return (0, 1)  # (exported, skipped)
     else:
         item.export(filename=edited_filename, dest=export_path, use_photos_export=False, edited=True, live_photo=False, raw_photo=False)
-        return 0  # Not skipped
+        return (1, 0)  # (exported, skipped)
 
 def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
     """Export the raw version of a photo if it has a raw version."""
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of raw version for video {item.filename} - not applicable for videos")
-        return 0  # Not skipped
+        return (0, 0)  # (exported, skipped) - No export attempted
 
     if not (item.has_raw or item.israw):
         logger.debug(f"Skipping export of raw photo for {item.filename} - no raw version available")
-        return 0  # Not skipped
+        return (0, 0)  # (exported, skipped) - No export attempted
 
     raw_filename = f"{filename_base}_raw{filename_ext}"
     raw_path = os.path.join(export_path, raw_filename)
 
     if os.path.exists(raw_path):
         logger.debug(f"Skipping export of raw photo {raw_filename} - file already exists")
-        return 1  # Skipped
+        return (0, 1)  # (exported, skipped)
     else:
         try:
             item.export(filename=raw_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=True)
-            return 0  # Not skipped
+            return (1, 0)  # (exported, skipped)
         except Exception as e:
             logger.debug(f"Could not export raw photo for {item.filename}: {e}")
-            return 0  # Not skipped
+            return (0, 0)  # (exported, skipped) - Export failed
 
 def export_live(item, export_path, filename_base, filename_ext, is_photo, is_video):
     """Export the live version of a photo."""
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of live version for video {item.filename} - not applicable for videos")
-        return 0  # Not skipped
+        return (0, 0)  # (exported, skipped) - No export attempted
 
     live_filename = f"{filename_base}_live{filename_ext}"
     live_path = os.path.join(export_path, live_filename)
 
     if os.path.exists(live_path):
         logger.debug(f"Skipping export of live photo {live_filename} - file already exists")
-        return 1  # Skipped
+        return (0, 1)  # (exported, skipped)
     else:
         try:
             item.export(filename=live_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=True, raw_photo=False)
-            return 0  # Not skipped
+            return (1, 0)  # (exported, skipped)
         except Exception as e:
             logger.debug(f"Could not export live photo for {item.filename}: {e}")
-            return 0  # Not skipped
+            return (0, 0)  # (exported, skipped) - Export failed
 
 def export_media(threshold_date, export_base_dir):
     """Export photos and videos from Photos.app that were taken since the threshold date."""
@@ -185,6 +185,7 @@ def export_media(threshold_date, export_base_dir):
     # Export media items (photos and videos)
     exported_count = 0
     skipped_count = 0
+    processed_count = 0
     for item in filtered_media:
         try:
             # Get media date
@@ -202,19 +203,23 @@ def export_media(threshold_date, export_base_dir):
             media_type = "photo" if is_photo else "video" if is_video else "unknown"
 
             # Export each version
-            skipped_count += export_original(item, export_path, filename_base, filename_ext, is_video, media_type)
-            skipped_count += export_edited(item, export_path, filename_base, filename_ext, media_type)
-            skipped_count += export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video)
-            skipped_count += export_live(item, export_path, filename_base, filename_ext, is_photo, is_video)
+            original_exported, original_skipped = export_original(item, export_path, filename_base, filename_ext, is_video, media_type)
+            edited_exported, edited_skipped = export_edited(item, export_path, filename_base, filename_ext, media_type)
+            raw_exported, raw_skipped = export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video)
+            live_exported, live_skipped = export_live(item, export_path, filename_base, filename_ext, is_photo, is_video)
 
-            exported_count += 1
-            if exported_count % 10 == 0:
-                logger.info(f"Exported {exported_count}/{len(filtered_media)} media items")
+            # Accumulate counts
+            exported_count += original_exported + edited_exported + raw_exported + live_exported
+            skipped_count += original_skipped + edited_skipped + raw_skipped + live_skipped
+
+            processed_count += 1
+            if processed_count % 10 == 0:
+                logger.info(f"Processed {processed_count}/{len(filtered_media)} media items, exported {exported_count} files")
 
         except Exception as e:
             logger.error(f"Error exporting {media_type} {item.filename}: {e}")
 
-    logger.info(f"Successfully exported {exported_count} media items, skipped {skipped_count} already existing files")
+    logger.info(f"Successfully exported {exported_count} files from {processed_count} media items, skipped {skipped_count} already existing files")
 
 def main():
     args = parse_args()
