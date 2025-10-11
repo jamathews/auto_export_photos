@@ -82,6 +82,82 @@ def get_export_path(photo_date, base_dir):
 
     return export_path
 
+def export_original(item, export_path, filename_base, filename_ext, is_video, media_type):
+    """Export the original version of a media item."""
+    original_filename = f"{filename_base}_original{filename_ext}"
+    original_path = os.path.join(export_path, original_filename)
+
+    if os.path.exists(original_path):
+        logger.debug(f"Skipping export of original {media_type} {original_filename} - file already exists")
+        return 1  # Skipped
+    else:
+        if is_video:
+            item.export(filename=original_filename, dest=export_path, use_photos_export=True)
+        else:
+            item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
+        return 0  # Not skipped
+
+def export_edited(item, export_path, filename_base, filename_ext, media_type):
+    """Export the edited version of a media item if edits exist."""
+    if not item.hasadjustments:
+        return 0  # Not skipped
+
+    edited_filename = f"{filename_base}_edited{filename_ext}"
+    edited_path = os.path.join(export_path, edited_filename)
+
+    if os.path.exists(edited_path):
+        logger.debug(f"Skipping export of edited {media_type} {edited_filename} - file already exists")
+        return 1  # Skipped
+    else:
+        item.export(filename=edited_filename, dest=export_path, use_photos_export=False, edited=True, live_photo=False, raw_photo=False)
+        return 0  # Not skipped
+
+def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
+    """Export the raw version of a photo if it has a raw version."""
+    if not is_photo:
+        if is_video:
+            logger.debug(f"Skipping export of raw version for video {item.filename} - not applicable for videos")
+        return 0  # Not skipped
+
+    if not (item.has_raw or item.israw):
+        logger.debug(f"Skipping export of raw photo for {item.filename} - no raw version available")
+        return 0  # Not skipped
+
+    raw_filename = f"{filename_base}_raw{filename_ext}"
+    raw_path = os.path.join(export_path, raw_filename)
+
+    if os.path.exists(raw_path):
+        logger.debug(f"Skipping export of raw photo {raw_filename} - file already exists")
+        return 1  # Skipped
+    else:
+        try:
+            item.export(filename=raw_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=True)
+            return 0  # Not skipped
+        except Exception as e:
+            logger.debug(f"Could not export raw photo for {item.filename}: {e}")
+            return 0  # Not skipped
+
+def export_live(item, export_path, filename_base, filename_ext, is_photo, is_video):
+    """Export the live version of a photo."""
+    if not is_photo:
+        if is_video:
+            logger.debug(f"Skipping export of live version for video {item.filename} - not applicable for videos")
+        return 0  # Not skipped
+
+    live_filename = f"{filename_base}_live{filename_ext}"
+    live_path = os.path.join(export_path, live_filename)
+
+    if os.path.exists(live_path):
+        logger.debug(f"Skipping export of live photo {live_filename} - file already exists")
+        return 1  # Skipped
+    else:
+        try:
+            item.export(filename=live_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=True, raw_photo=False)
+            return 0  # Not skipped
+        except Exception as e:
+            logger.debug(f"Could not export live photo for {item.filename}: {e}")
+            return 0  # Not skipped
+
 def export_media(threshold_date, export_base_dir):
     """Export photos and videos from Photos.app that were taken since the threshold date."""
     logger.info(f"Exporting photos and videos taken since {threshold_date}")
@@ -125,59 +201,11 @@ def export_media(threshold_date, export_base_dir):
             is_video = item.ismovie
             media_type = "photo" if is_photo else "video" if is_video else "unknown"
 
-            # Export original version
-            original_filename = f"{filename_base}_original{filename_ext}"
-            original_path = os.path.join(export_path, original_filename)
-            if os.path.exists(original_path):
-                logger.debug(f"Skipping export of original {media_type} {original_filename} - file already exists")
-                skipped_count += 1
-            else:
-                if is_video:
-                    item.export(filename=original_filename, dest=export_path, use_photos_export=True)
-                else:
-                    item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
-
-            # Export edited version (if edits exist)
-            if item.hasadjustments:
-                edited_filename = f"{filename_base}_edited{filename_ext}"
-                edited_path = os.path.join(export_path, edited_filename)
-                if os.path.exists(edited_path):
-                    logger.debug(f"Skipping export of edited {media_type} {edited_filename} - file already exists")
-                    skipped_count += 1
-                else:
-                    item.export(filename=edited_filename, dest=export_path, use_photos_export=False, edited=True, live_photo=False, raw_photo=False)
-
-            # Only export raw if this is a photo and it has a raw version
-            if is_photo and (item.has_raw or item.israw):
-                raw_filename = f"{filename_base}_raw{filename_ext}"
-                raw_path = os.path.join(export_path, raw_filename)
-                if os.path.exists(raw_path):
-                    logger.debug(f"Skipping export of raw photo {raw_filename} - file already exists")
-                    skipped_count += 1
-                else:
-                    try:
-                        item.export(filename=raw_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=True)
-                    except Exception as e:
-                        logger.debug(f"Could not export raw photo for {item.filename}: {e}")
-            elif is_photo:
-                logger.debug(f"Skipping export of raw photo for {item.filename} - no raw version available")
-            elif is_video:
-                logger.debug(f"Skipping export of raw version for video {item.filename} - not applicable for videos")
-
-            # Try to export live version (only for photos)
-            if is_photo:
-                try:
-                    live_filename = f"{filename_base}_live{filename_ext}"
-                    live_path = os.path.join(export_path, live_filename)
-                    if os.path.exists(live_path):
-                        logger.debug(f"Skipping export of live photo {live_filename} - file already exists")
-                        skipped_count += 1
-                    else:
-                        item.export(filename=live_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=True, raw_photo=False)
-                except Exception as e:
-                    logger.debug(f"Could not export live photo for {item.filename}: {e}")
-            elif is_video:
-                logger.debug(f"Skipping export of live version for video {item.filename} - not applicable for videos")
+            # Export each version
+            skipped_count += export_original(item, export_path, filename_base, filename_ext, is_video, media_type)
+            skipped_count += export_edited(item, export_path, filename_base, filename_ext, media_type)
+            skipped_count += export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video)
+            skipped_count += export_live(item, export_path, filename_base, filename_ext, is_photo, is_video)
 
             exported_count += 1
             if exported_count % 10 == 0:
