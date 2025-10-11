@@ -92,14 +92,18 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
         return 0, 1  # (exported, skipped)
     else:
         if is_video:
-            item.export(filename=original_filename, dest=export_path, use_photos_export=True)
+            exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=True)
+            if not exported_files:
+                raise RuntimeError(f"Failed to export original video {original_filename}")
         elif item.has_raw or item.israw:
             logger.debug(f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
             return 0, 1  # (exported, skipped)
         else:
             # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
             # because we need different filenames for each variation, and item.export() only accepts a single filename.
-            item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
+            exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=False, edited=False, live_photo=False, raw_photo=False)
+            if not exported_files:
+                raise RuntimeError(f"Failed to export original photo {original_filename}")
         return 1, 0  # (exported, skipped)
 
 def export_edited(item, export_path, filename_base, filename_ext, media_type):
@@ -116,7 +120,9 @@ def export_edited(item, export_path, filename_base, filename_ext, media_type):
     else:
         # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
         # because we need different filenames for each variation, and item.export() only accepts a single filename.
-        item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True, live_photo=False, raw_photo=False)
+        exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True, live_photo=False, raw_photo=False)
+        if not exported_files:
+            raise RuntimeError(f"Failed to export edited {media_type} {edited_filename}")
         return 1, 0  # (exported, skipped)
 
 def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
@@ -140,7 +146,9 @@ def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_vide
         try:
             # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
             # because we need different filenames for each variation, and item.export() only accepts a single filename.
-            item.export(filename=raw_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=False, raw_photo=True)
+            exported_files = item.export(filename=raw_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=False, raw_photo=True)
+            if not exported_files:
+                raise RuntimeError(f"Failed to export raw photo {raw_filename}")
             return 1, 0  # (exported, skipped)
         except Exception as e:
             logger.debug(f"Could not export raw photo for {item.filename}: {e}")
@@ -164,7 +172,9 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
             if item.live_photo:
                 # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
                 # because we need different filenames for each variation, and item.export() only accepts a single filename.
-                item.export(filename=live_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=True, raw_photo=False)
+                exported_files = item.export(filename=live_filename, dest=export_path, use_photos_export=True, edited=False, live_photo=True, raw_photo=False)
+                if not exported_files:
+                    raise RuntimeError(f"Failed to export live photo {live_filename}")
                 return 1, 0  # (exported, skipped)
             return 0, 0  # (exported, skipped) - Live photo not available for this photo
         except Exception as e:
