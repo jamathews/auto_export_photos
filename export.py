@@ -1,4 +1,37 @@
 #!/usr/bin/env python3
+"""
+Auto Export Photos - A tool for automatically exporting photos and videos from macOS Photos app.
+
+Copyright (C) 2023 James Mathews
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+This script exports photos and videos from the macOS Photos app that were taken since a specified date.
+It can export original, edited, raw, and live photo versions of media items, organizing them into
+a directory structure based on the date the photo was taken (YYYY/MM/YYYY-MM-DD).
+
+The script keeps track of the last export date in a file called 'last_export.txt' in the export directory,
+which is used as the default threshold date for subsequent runs if no date is specified.
+
+Usage:
+    python export.py [--threshold-date YYYY-MM-DD] [--export-dir PATH] [-v]
+
+Options:
+    --threshold-date  Date to export photos from (default: read from last_export.txt or current date)
+    --export-dir      Base directory for exported photos (default: ~/Pictures)
+    -v, --verbose     Increase verbosity level (-v for WARNING, -vv for INFO, -vvv for DEBUG)
+"""
 import argparse
 import logging
 import os
@@ -17,18 +50,39 @@ DEFAULT_EXPORT_BASE_DIR = os.path.expanduser('~/Pictures')
 
 
 def parse_args():
+    """
+    Parse command line arguments for the script.
+
+    Returns:
+        argparse.Namespace: An object containing the parsed command line arguments.
+            - threshold_date: Date string to export photos from (default: None, read from last_export.txt or current date)
+            - export_dir: Base directory for exported photos (default: ~/Pictures)
+            - verbose: Integer indicating verbosity level (0=ERROR, 1=WARNING, 2=INFO, 3+=DEBUG)
+    """
     parser = argparse.ArgumentParser(description='Export photos and videos from Photos.app using osxphotos.')
     parser.add_argument('--threshold-date', default=None,
                         help=f'Export photos and videos taken since this date (default: read from last_export.txt or now)')
     parser.add_argument('--export-dir', default=DEFAULT_EXPORT_BASE_DIR,
                         help=f'Base directory for exported photos and videos (default: {DEFAULT_EXPORT_BASE_DIR})')
     parser.add_argument('-v', '--verbose', action='count', default=0,
-                        help='Increase verbosity level (-v for INFO, -vv for DEBUG)')
+                        help='Increase verbosity level (-v for WARNING, -vv for INFO, -vvv for DEBUG)')
     return parser.parse_args()
 
 
 def setup_logging(verbose_level):
-    """Set up logging based on the verbosity level."""
+    """
+    Set up logging based on the verbosity level.
+
+    Configures the logging level for both the root logger and the script's logger
+    based on the verbosity level specified in the command line arguments.
+
+    Args:
+        verbose_level (int): The verbosity level:
+            - 0: ERROR (default)
+            - 1: WARNING
+            - 2: INFO
+            - 3+: DEBUG (also enables osxphotos debug mode)
+    """
     if verbose_level >= 3:
         osxphotos.set_debug(True)
         logger.setLevel(logging.DEBUG)
@@ -53,7 +107,24 @@ def setup_logging(verbose_level):
 
 
 def parse_threshold_date(date_str):
-    """Parse the threshold date string into a timezone-aware datetime object."""
+    """
+    Parse the threshold date string into a timezone-aware datetime object.
+
+    Attempts to parse the date string using two different formats:
+    1. ISO format (e.g., '2023-01-01T12:00:00')
+    2. Custom format (e.g., '2023-01-01 12:00:00')
+
+    If the parsed datetime is naive (has no timezone), the local timezone is added.
+
+    Args:
+        date_str (str): The date string to parse
+
+    Returns:
+        datetime: A timezone-aware datetime object
+
+    Raises:
+        SystemExit: If the date string cannot be parsed in either format
+    """
     try:
         # Parse the date and make it timezone-aware with local timezone
         dt = datetime.fromisoformat(date_str)
@@ -73,7 +144,21 @@ def parse_threshold_date(date_str):
 
 
 def get_export_path(photo_date, base_dir):
-    """Generate export path based on photo date: ./Pictures/yyyy/mm/yyyy-mm-dd"""
+    """
+    Generate export path based on photo date.
+
+    Creates a directory structure in the format: base_dir/yyyy/mm/yyyy-mm-dd
+    For example: ~/Pictures/2023/01/2023-01-15
+
+    The function ensures the directory exists, creating it if necessary.
+
+    Args:
+        photo_date (datetime): The date the photo was taken
+        base_dir (str): The base directory for exports
+
+    Returns:
+        str: The full path to the export directory
+    """
     year = photo_date.year
     month = photo_date.month
     day = photo_date.day
@@ -89,7 +174,28 @@ def get_export_path(photo_date, base_dir):
 
 
 def export_original(item, export_path, filename_base, filename_ext, is_video, media_type):
-    """Export the original version of a media item."""
+    """
+    Export the original version of a media item.
+
+    Exports the original version of a photo or video to the specified export path.
+    Skips export if the file already exists or if the item has a raw version that will be exported separately.
+
+    Args:
+        item (osxphotos.PhotoInfo): The photo or video to export
+        export_path (str): The directory to export to
+        filename_base (str): The base filename without extension
+        filename_ext (str): The file extension including the dot (e.g., '.jpg')
+        is_video (bool): Whether the item is a video
+        media_type (str): The type of media ('photo' or 'video')
+
+    Returns:
+        tuple: A tuple containing (exported_count, skipped_count)
+            - exported_count (int): 1 if the file was exported, 0 otherwise
+            - skipped_count (int): 1 if the file was skipped, 0 otherwise
+
+    Raises:
+        RuntimeError: If the export fails
+    """
     original_filename = f"{filename_base}{filename_ext}"
     original_path = os.path.join(export_path, original_filename)
 
@@ -125,7 +231,27 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
 
 
 def export_edited(item, export_path, filename_base, filename_ext, media_type):
-    """Export the edited version of a media item if edits exist."""
+    """
+    Export the edited version of a media item if edits exist.
+
+    Exports the edited version of a photo or video to the specified export path
+    if the item has adjustments (edits). Skips export if the file already exists.
+
+    Args:
+        item (osxphotos.PhotoInfo): The photo or video to export
+        export_path (str): The directory to export to
+        filename_base (str): The base filename without extension
+        filename_ext (str): The file extension including the dot (e.g., '.jpg')
+        media_type (str): The type of media ('photo' or 'video')
+
+    Returns:
+        tuple: A tuple containing (exported_count, skipped_count)
+            - exported_count (int): 1 if the file was exported, 0 otherwise
+            - skipped_count (int): 1 if the file was skipped, 0 otherwise
+
+    Raises:
+        RuntimeError: If the export fails
+    """
     if not item.hasadjustments:
         return 0, 0  # (exported, skipped) - No export attempted
 
@@ -154,7 +280,26 @@ def export_edited(item, export_path, filename_base, filename_ext, media_type):
 
 
 def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_video):
-    """Export the raw version of a photo if it has a raw version."""
+    """
+    Export the raw version of a photo if it has a raw version.
+
+    Exports the raw version of a photo to the specified export path if the item
+    has a raw version. Skips export for videos and photos without raw versions.
+    Also skips export if the file already exists.
+
+    Args:
+        item (osxphotos.PhotoInfo): The photo or video to export
+        export_path (str): The directory to export to
+        filename_base (str): The base filename without extension
+        filename_ext (str): The file extension including the dot (e.g., '.jpg')
+        is_photo (bool): Whether the item is a photo
+        is_video (bool): Whether the item is a video
+
+    Returns:
+        tuple: A tuple containing (exported_count, skipped_count)
+            - exported_count (int): 1 if the file was exported, 0 otherwise
+            - skipped_count (int): 1 if the file was skipped, 0 otherwise
+    """
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of raw version for video {item.filename} - not applicable for videos")
@@ -188,7 +333,26 @@ def export_raw(item, export_path, filename_base, filename_ext, is_photo, is_vide
 
 
 def export_live(item, export_path, filename_base, filename_ext, is_photo, is_video):
-    """Export the live version of a photo."""
+    """
+    Export the live version of a photo if it's a live photo.
+
+    Exports the live version of a photo to the specified export path if the item
+    is a live photo. Skips export for videos and non-live photos.
+    Also skips export if the file already exists.
+
+    Args:
+        item (osxphotos.PhotoInfo): The photo or video to export
+        export_path (str): The directory to export to
+        filename_base (str): The base filename without extension
+        filename_ext (str): The file extension including the dot (e.g., '.jpg')
+        is_photo (bool): Whether the item is a photo
+        is_video (bool): Whether the item is a video
+
+    Returns:
+        tuple: A tuple containing (exported_count, skipped_count)
+            - exported_count (int): 1 if the file was exported, 0 otherwise
+            - skipped_count (int): 1 if the file was skipped, 0 otherwise
+    """
     if not is_photo:
         if is_video:
             logger.debug(f"Skipping export of live version for video {item.filename} - not applicable for videos")
@@ -220,7 +384,28 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
 
 
 def export_media(threshold_date, export_base_dir):
-    """Export photos and videos from Photos.app that were taken since the threshold date."""
+    """
+    Export photos and videos from Photos.app that were taken since the threshold date.
+
+    This is the main export function that:
+    1. Connects to the Photos library
+    2. Retrieves all media items
+    3. Filters them by date
+    4. Exports each item (original, edited, raw, and live versions as applicable)
+    5. Organizes them into date-based directories
+
+    The function logs progress and handles errors during the export process.
+
+    Args:
+        threshold_date (datetime): The date to filter media by (only export media taken on or after this date)
+        export_base_dir (str): The base directory to export media to
+
+    Returns:
+        None
+
+    Raises:
+        SystemExit: If there's an error accessing the Photos library
+    """
     # Note: In response to the question "can all variations be exported using a single call to item.export()?":
     # It's not possible to export all variations (original, edited, raw, live) with a single call to item.export().
     # The method only accepts a single filename parameter, and we need different filenames for each variation.
@@ -297,8 +482,19 @@ def export_media(threshold_date, export_base_dir):
 def get_threshold_date(args):
     """
     Determine the threshold date based on command line arguments or last_export.txt.
-    Returns a tuple of (threshold_date, timestamp_file) where threshold_date is a datetime object
-    and timestamp_file is the path to the last_export.txt file.
+
+    This function determines the threshold date for filtering media items by:
+    1. Using the date provided in command line arguments, if any
+    2. Otherwise, reading from the last_export.txt file, if it exists
+    3. Falling back to the current date and time if neither of the above is available
+
+    Args:
+        args (argparse.Namespace): The parsed command line arguments
+
+    Returns:
+        tuple: A tuple containing:
+            - threshold_date (datetime): A datetime object representing the threshold date
+            - timestamp_file (str): The path to the last_export.txt file
     """
     threshold_date_str = args.threshold_date
     timestamp_file = os.path.join(args.export_dir, "last_export.txt")
@@ -327,6 +523,17 @@ def get_threshold_date(args):
 def save_export_timestamp(timestamp_file, current_timestamp):
     """
     Save the current timestamp to the last_export.txt file.
+
+    This function writes the current timestamp to a file, which will be used
+    as the default threshold date for the next run of the script if no date
+    is specified on the command line.
+
+    Args:
+        timestamp_file (str): The path to the file where the timestamp will be saved
+        current_timestamp (str): The timestamp string to save (format: YYYY-MM-DD HH:MM:SS)
+
+    Returns:
+        None
     """
 
     try:
@@ -340,7 +547,19 @@ def save_export_timestamp(timestamp_file, current_timestamp):
 def log_export_error(export_dir, item, filename, error_message):
     """
     Log export errors to export_dir/last_export_errors.log.
-    Includes filename, original_filename, and date of the failed item.
+
+    This function writes error information to a log file when an export operation fails.
+    The log includes details about the media item that failed to export, such as its
+    filename, original filename, date, and the error message.
+
+    Args:
+        export_dir (str): The directory where the log file will be created
+        item (osxphotos.PhotoInfo): The photo or video that failed to export
+        filename (str): The filename that was being exported
+        error_message (str): The error message describing what went wrong
+
+    Returns:
+        None
     """
     error_log_file = os.path.join(export_dir, "last_export_errors.log")
 
@@ -357,6 +576,19 @@ def log_export_error(export_dir, item, filename, error_message):
 
 
 def main():
+    """
+    Main entry point for the script.
+
+    This function orchestrates the entire export process:
+    1. Parses command line arguments
+    2. Sets up logging based on verbosity level
+    3. Determines the threshold date for filtering media
+    4. Exports photos and videos taken since the threshold date
+    5. Saves the current timestamp for the next run
+
+    Returns:
+        None
+    """
     args = parse_args()
 
     # Set up logging based on verbosity
