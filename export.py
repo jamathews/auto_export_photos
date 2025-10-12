@@ -11,7 +11,7 @@ import osxphotos
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[logging.StreamHandler()])
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 DEFAULT_EXPORT_BASE_DIR = os.path.expanduser('~/Pictures')
 
@@ -30,6 +30,7 @@ def parse_args():
 def setup_logging(verbose_level):
     """Set up logging based on the verbosity level."""
     if verbose_level >= 3:
+        osxphotos.set_debug(True)
         logger.setLevel(logging.DEBUG)
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("DEBUG logging enabled")
