@@ -266,8 +266,7 @@ def export_edited(item, export_path, filename_base, filename_ext, media_type):
             # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
             # because we need different filenames for each variation, and item.export() only accepts a single filename.
             exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True,
-                                         edited=True,
-                                         live_photo=False, raw_photo=False)
+                                         edited=True, live_photo=False, raw_photo=False)
             if not exported_files:
                 error_msg = f"Failed to export edited {media_type} {edited_filename}"
                 log_export_error(os.path.dirname(export_path), item, edited_filename, error_msg)
