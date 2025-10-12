@@ -400,7 +400,7 @@ def export_media(threshold_date, export_base_dir):
         export_base_dir (str): The base directory to export media to
 
     Returns:
-        None
+        datetime: The creation date of the most recent exported photo or video, or None if no media was exported
 
     Raises:
         SystemExit: If there's an error accessing the Photos library
@@ -437,6 +437,7 @@ def export_media(threshold_date, export_base_dir):
     exported_count = 0
     skipped_count = 0
     processed_count = 0
+    most_recent_date = None
     for item in filtered_media:
         try:
             # Get media date
@@ -465,6 +466,11 @@ def export_media(threshold_date, export_base_dir):
             exported_count += original_exported + edited_exported + raw_exported + live_exported
             skipped_count += original_skipped + edited_skipped + raw_skipped + live_skipped
 
+            # Update most recent date if any file was exported
+            if original_exported + edited_exported + raw_exported + live_exported > 0:
+                if most_recent_date is None or item_date > most_recent_date:
+                    most_recent_date = item_date
+
             processed_count += 1
             if processed_count % 10 == 0:
                 logger.info(
@@ -476,6 +482,11 @@ def export_media(threshold_date, export_base_dir):
 
     logger.info(
         f"Successfully exported {exported_count} files from {processed_count} media items, skipped {skipped_count} already existing files")
+
+    if most_recent_date:
+        logger.debug(f"Most recent exported photo date: {most_recent_date}")
+
+    return most_recent_date
 
 
 def get_threshold_date(args):
@@ -519,17 +530,18 @@ def get_threshold_date(args):
     return threshold_date, timestamp_file
 
 
-def save_export_timestamp(timestamp_file, current_timestamp):
+def save_export_timestamp(timestamp_file, timestamp):
     """
-    Save the current timestamp to the last_export.txt file.
+    Save the timestamp to the last_export.txt file.
 
-    This function writes the current timestamp to a file, which will be used
+    This function writes the timestamp to a file, which will be used
     as the default threshold date for the next run of the script if no date
-    is specified on the command line.
+    is specified on the command line. The timestamp is typically the creation date
+    of the most recent exported photo or video.
 
     Args:
         timestamp_file (str): The path to the file where the timestamp will be saved
-        current_timestamp (str): The timestamp string to save (format: YYYY-MM-DD HH:MM:SS)
+        timestamp (str): The timestamp string to save (format: YYYY-MM-DD HH:MM:SS)
 
     Returns:
         None
@@ -537,7 +549,7 @@ def save_export_timestamp(timestamp_file, current_timestamp):
 
     try:
         with open(timestamp_file, "w") as f:
-            f.write(current_timestamp + "\n")
+            f.write(timestamp + "\n")
         logger.debug(f"Saved export timestamp to {timestamp_file}")
     except Exception as e:
         logger.error(f"Failed to save export timestamp to {timestamp_file}: {e}")
@@ -583,7 +595,7 @@ def main():
     2. Sets up logging based on verbosity level
     3. Determines the threshold date for filtering media
     4. Exports photos and videos taken since the threshold date
-    5. Saves the current timestamp for the next run
+    5. Saves the creation date of the most recent exported photo for the next run
 
     Returns:
         None
@@ -598,10 +610,16 @@ def main():
     current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Export photos and videos
-    export_media(threshold_date, args.export_dir)
+    most_recent_date = export_media(threshold_date, args.export_dir)
 
-    # Save the current timestamp for next run
-    save_export_timestamp(timestamp_file, current_timestamp)
+    # Save the most recent photo date for next run, or current timestamp if no photos were exported
+    if most_recent_date:
+        timestamp_to_save = most_recent_date.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        timestamp_to_save = current_timestamp
+        logger.debug("No photos exported, using current timestamp")
+
+    save_export_timestamp(timestamp_file, timestamp_to_save)
 
     logger.info("Export completed successfully")
 
