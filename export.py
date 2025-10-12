@@ -11,9 +11,9 @@ import osxphotos
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[logging.StreamHandler()])
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
-DEFAULT_EXPORT_BASE_DIR = "./Pictures"
+DEFAULT_EXPORT_BASE_DIR = os.path.expanduser('~/Pictures')
 
 
 def parse_args():
@@ -89,7 +89,7 @@ def get_export_path(photo_date, base_dir):
 
 def export_original(item, export_path, filename_base, filename_ext, is_video, media_type):
     """Export the original version of a media item."""
-    original_filename = f"{filename_base}_original{filename_ext}"
+    original_filename = f"{filename_base}{filename_ext}"
     original_path = os.path.join(export_path, original_filename)
 
     if os.path.exists(original_path):
@@ -104,13 +104,14 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
                     log_export_error(os.path.dirname(export_path), item, original_filename, error_msg)
                     raise RuntimeError(error_msg)
             elif item.has_raw or item.israw:
-                logger.debug(f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
+                logger.debug(
+                    f"Skipping export of original {media_type} {original_filename} - it will be exported as raw")
                 return 0, 1  # (exported, skipped)
             else:
                 # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
                 # because we need different filenames for each variation, and item.export() only accepts a single filename.
                 exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=False,
-                                            edited=False, live_photo=False, raw_photo=False)
+                                             edited=False, live_photo=False, raw_photo=False)
                 if not exported_files:
                     error_msg = f"Failed to export original photo {original_filename}"
                     log_export_error(os.path.dirname(export_path), item, original_filename, error_msg)
@@ -137,8 +138,9 @@ def export_edited(item, export_path, filename_base, filename_ext, media_type):
         try:
             # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
             # because we need different filenames for each variation, and item.export() only accepts a single filename.
-            exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True, edited=True,
-                                        live_photo=False, raw_photo=False)
+            exported_files = item.export(filename=edited_filename, dest=export_path, use_photos_export=True,
+                                         edited=True,
+                                         live_photo=False, raw_photo=False)
             if not exported_files:
                 error_msg = f"Failed to export edited {media_type} {edited_filename}"
                 log_export_error(os.path.dirname(export_path), item, edited_filename, error_msg)
