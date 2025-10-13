@@ -217,7 +217,7 @@ def export_original(item, export_path, filename_base, filename_ext, is_video, me
             else:
                 # Note: We need separate calls to item.export() for each variation (original, edited, raw, live)
                 # because we need different filenames for each variation, and item.export() only accepts a single filename.
-                exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=False,
+                exported_files = item.export(filename=original_filename, dest=export_path, use_photos_export=True,
                                              edited=False, live_photo=False, raw_photo=False)
                 if not exported_files:
                     error_msg = f"Failed to export original photo {original_filename}"
