@@ -26,7 +26,17 @@ The script keeps track of the last export date in a file called 'last_export.txt
 
 - macOS with Photos app
 - Python 3.13
-- osxphotos library
+- osxphotos and photoscript libraries
+
+## Permissions
+
+To run this script, your Terminal or IDE needs permission to access the Photos library. 
+The script will attempt to prompt for these permissions automatically if they are missing.
+
+Additionally, in newer versions of macOS, you may need to grant **Full Disk Access** to your Terminal application:
+1. Open **System Settings**.
+2. Go to **Privacy & Security** > **Full Disk Access**.
+3. Toggle on your Terminal (e.g., Terminal, iTerm, or your IDE).
 
 ## Installation
 

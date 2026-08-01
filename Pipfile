@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 osxphotos = "*"
+photoscript = "*"
 
 [dev-packages]
 

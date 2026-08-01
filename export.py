@@ -382,6 +382,24 @@ def export_live(item, export_path, filename_base, filename_ext, is_photo, is_vid
             return 0, 0  # (exported, skipped) - Export failed
 
 
+def request_permissions():
+    """
+    Attempt to trigger macOS permission prompts for Photos library access.
+    
+    This function tries to trigger the native macOS permission dialogs
+    via AppleScript (photoscript). PhotoKit requests are avoided as they 
+    can cause crashes in CLI environments on some macOS versions.
+    """
+    # Try AppleScript request via photoscript
+    try:
+        import photoscript
+        logger.info("Activating Photos app to trigger permission prompt...")
+        # This triggers a "Terminal wants to control Photos" prompt
+        photoscript.PhotosLibrary().activate()
+    except Exception as e:
+        logger.debug(f"Could not request Photos access via photoscript: {e}")
+
+
 def export_media(threshold_date, export_base_dir):
     """
     Export photos and videos from Photos.app that were taken since the threshold date.
@@ -417,8 +435,22 @@ def export_media(threshold_date, export_base_dir):
     try:
         photosdb = osxphotos.PhotosDB()
     except Exception as e:
-        logger.error(f"Error accessing Photos library: {e}")
-        sys.exit(1)
+        error_msg = str(e).lower()
+        if "no such table" in error_msg or "permission denied" in error_msg:
+            logger.warning("Permission error detected. Attempting to request access...")
+            request_permissions()
+            try:
+                # Try again after requesting permissions
+                photosdb = osxphotos.PhotosDB()
+            except Exception as e2:
+                logger.error(f"Error accessing Photos library: {e2}")
+                logger.error("Still unable to access Photos library.")
+                logger.error("Please ensure your Terminal/IDE has both 'Full Disk Access' and 'Photos' access")
+                logger.error("in System Settings > Privacy & Security.")
+                sys.exit(1)
+        else:
+            logger.error(f"Error accessing Photos library: {e}")
+            sys.exit(1)
 
     # Get all media (photos and videos) from the library
     media_items = photosdb.photos()
@@ -586,6 +618,30 @@ def log_export_error(export_dir, item, filename, error_message):
         logger.error(f"Failed to log export error to {error_log_file}: {e}")
 
 
+def patch_osxphotos():
+    """
+    Apply monkeypatches to osxphotos for compatibility with newer macOS versions.
+    
+    Specifically addresses schema changes in Photos 11 (macOS 16 / Darwin 26)
+    where join table indices have shifted (e.g., Z_32ASSETS -> Z_33ASSETS).
+    """
+    try:
+        import osxphotos._constants
+        if 11 in osxphotos._constants._DB_TABLE_NAMES:
+            # Check for Darwin 26.6 / Photos 11 specific schema
+            # We use update to only change the tables that shifted
+            osxphotos._constants._DB_TABLE_NAMES[11].update({
+                "KEYWORD_JOIN": "Z_1KEYWORDS.Z_52KEYWORDS",
+                "ALBUM_JOIN": "Z_33ASSETS.Z_3ASSETS",
+                "ALBUM_SORT_ORDER": "Z_33ASSETS.Z_FOK_3ASSETS",
+                "ASSET_ALBUM_JOIN": "Z_33ASSETS.Z_33ALBUMS",
+                "ASSET_ALBUM_TABLE": "Z_33ASSETS",
+            })
+            logger.debug("Applied schema patches for Photos 11")
+    except Exception as e:
+        logger.debug(f"Could not apply osxphotos patches: {e}")
+
+
 def main():
     """
     Main entry point for the script.
@@ -593,9 +649,10 @@ def main():
     This function orchestrates the entire export process:
     1. Parses command line arguments
     2. Sets up logging based on verbosity level
-    3. Determines the threshold date for filtering media
-    4. Exports photos and videos taken since the threshold date
-    5. Saves the creation date of the most recent exported photo for the next run
+    3. Applies necessary patches for newer macOS versions
+    4. Determines the threshold date for filtering media
+    5. Exports photos and videos taken since the threshold date
+    6. Saves the creation date of the most recent exported photo for the next run
 
     Returns:
         None
@@ -604,6 +661,9 @@ def main():
 
     # Set up logging based on verbosity
     setup_logging(args.verbose)
+
+    # Patch osxphotos for newer macOS versions
+    patch_osxphotos()
 
     # Get threshold date and timestamp file path
     threshold_date, timestamp_file = get_threshold_date(args)
